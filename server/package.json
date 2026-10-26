@@ -1,0 +1,17 @@
+{
+  "name": "server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.ts",
+    "start": "node src/index.ts",
+    "test": "node --test src/"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.7",
+    "fastify": "^5.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

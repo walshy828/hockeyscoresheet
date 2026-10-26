@@ -1,0 +1,10 @@
+services:
+  scoresheet:
+    build: .
+    ports:
+      - "${HOST_PORT:-8787}:8080"
+    volumes:
+      - scoresheet-data:/data
+    restart: unless-stopped
+volumes:
+  scoresheet-data:

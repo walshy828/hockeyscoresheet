@@ -1,0 +1,20 @@
+{
+  "name": "hockeyscoresheet",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web",
+    "server"
+  ],
+  "scripts": {
+    "dev:server": "npm -w server run dev",
+    "dev:web": "npm -w web run dev",
+    "build": "npm -w web run build",
+    "test": "vitest run",
+    "typecheck": "tsc -p web --noEmit && tsc -p server --noEmit && tsc -p shared --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}
