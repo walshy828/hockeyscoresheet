@@ -128,4 +128,13 @@ describe('voice', () => {
     expect(parseVoice('note: goalie looks shaky')).toEqual({ kind: 'note', text: 'goalie looks shaky' });
     expect(parseVoice('gibberish')).toBeNull();
   });
+
+  it('noPP penalties do not leave the team short-handed', () => {
+    const base = [ev('clock', 1, 700, { running: false, remaining: 700, period: 1 })];
+    const pen = (noPP: boolean) => derive([...base, ev('penalty', 1, 800, { team: 'home', code: 'ROUGH', label: 'Roughing', minutes: 2, noPP })], game, 0);
+    expect(pen(false).ppOpps.away).toBe(1);
+    expect(pen(true).ppOpps.away).toBe(0);
+    expect(strengthNow(pen(false), 'away')).toBe('PP');
+    expect(strengthNow(pen(true), 'away')).toBe('EV');
+  });
 });

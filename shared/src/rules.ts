@@ -1,4 +1,4 @@
-import type { PenaltyType, Rules } from './types.ts';
+import type { PenaltyCategory, PenaltyType, Rules } from './types.ts';
 
 export const PRESETS: Record<string, Rules> = {
   highschool: { preset: 'highschool', periods: 3, periodMinutes: 15, otMinutes: 5, otEnabled: true, shootout: false, runningClock: false, minorMinutes: 2, majorMinutes: 5, timeouts: 1, skatersOnIce: 5 },
@@ -55,4 +55,23 @@ export function penaltyTypes(rules: Rules): PenaltyType[] {
     { code: 'MISC', label: 'Misconduct', minutes: 10 },
     { code: 'GMISC', label: 'Game misconduct', minutes: 10 },
   ];
+}
+
+export interface PenaltyCategoryInfo { id: PenaltyCategory; label: string; minutes: number; /** leaves the team short-handed */ shorts: boolean }
+
+export function penaltyCategories(rules: Rules): PenaltyCategoryInfo[] {
+  return [
+    { id: 'minor', label: 'Minor', minutes: rules.minorMinutes, shorts: true },
+    { id: 'double', label: 'Double minor', minutes: rules.minorMinutes * 2, shorts: true },
+    { id: 'major', label: 'Major', minutes: rules.majorMinutes, shorts: true },
+    { id: 'misconduct', label: 'Misconduct', minutes: 10, shorts: false },
+    { id: 'game', label: 'Game misc.', minutes: 10, shorts: false },
+  ];
+}
+
+/** Default category for a penalty type's minutes/code. */
+export function defaultCategory(t: PenaltyType, rules: Rules): PenaltyCategory {
+  if (t.code === 'GMISC') return 'game';
+  if (t.code === 'MISC') return 'misconduct';
+  return t.minutes >= rules.majorMinutes ? 'major' : 'minor';
 }

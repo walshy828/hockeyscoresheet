@@ -16,6 +16,8 @@ import { ScoreTab } from '../tabs/Score.tsx';
 import { LinesTab } from '../tabs/Lines.tsx';
 import { BoxTab, FaceoffsTab, IceTab, ShotsTab, StatSeg } from '../tabs/Stats.tsx';
 import { LogTab } from '../tabs/Log.tsx';
+import { LandscapeScore } from '../tabs/Landscape.tsx';
+import { useScoreLayout } from '../layout.ts';
 import { GoalieSheet, goalieLabel } from '../components/GoalieSheet.tsx';
 
 export function LocalGame() {
@@ -54,6 +56,7 @@ export function GameScreen({ game, events, canEdit, anchor, saveGame, toggleMode
   const [share, setShare] = useState(false);
   const [goalieSide, setGoalieSide] = useState<'home' | 'away' | null>(null);
   const st = useSyncStatus();
+  const { landscape } = useScoreLayout();
   useEffect(() => { setTab(canEdit ? 'score' : 'box'); }, [canEdit]);
   useEffect(() => { document.title = `${sideName(game, 'away')} @ ${sideName(game, 'home')}`; return () => { document.title = 'Hockey Scoresheet'; }; }, [game]);
 
@@ -73,9 +76,19 @@ export function GameScreen({ game, events, canEdit, anchor, saveGame, toggleMode
       : <div className={cls}>{txt}</div>;
   };
 
+  const wide = canEdit && tab === 'score' && landscape && live === undefined;
+
   return (
     <Ctx.Provider value={{ game, events, d, canEdit, actions, now, anchor, saveGame }}>
-      <div className="app">
+      {wide && (
+        <LandscapeScore
+          goTab={setTab}
+          onShare={() => setShare(true)}
+          onGames={() => nav('/')}
+          onEdit={() => nav(`/game/${game.id}/edit`)}
+        />
+      )}
+      {!wide && <div className="app">
         <header className="ghead">
           <div className="row" style={{ marginBottom: 4 }}>
             {live === undefined && <button className="btn sm icon ghost" aria-label="Back to games" onClick={() => nav('/')}>‹</button>}
@@ -127,7 +140,7 @@ export function GameScreen({ game, events, canEdit, anchor, saveGame, toggleMode
             <button key={k} className={activeNav === k ? 'active' : ''} onClick={() => setTab(k)}><span className="ico">{ico}</span>{label}</button>
           ))}
         </nav>
-      </div>
+      </div>}
       {menu && (
         <Sheet title="Game" onClose={() => setMenu(false)}>
           <div className="col">

@@ -38,12 +38,13 @@ export function describe(g: Game, e: GameEvent): { title: string; team?: Side; s
     }
     case 'shot': {
       const r = d.result === 'save' ? 'Shot on goal' : d.result === 'miss' ? 'Shot missed' : 'Shot blocked';
-      return { team: d.team, title: `${r} ${sideName(g, d.team)}${d.player ? ' ' + pLabel(g, d.player) : ''}` };
+      const sub = [d.blocker ? `blocked by ${pLabel(g, d.blocker, true)}` : '', d.strength && d.strength !== 'EV' ? d.strength : ''].filter(Boolean).join(' · ');
+      return { team: d.team, title: `${r} ${sideName(g, d.team)}${d.player ? ' ' + pLabel(g, d.player) : ''}`, sub: sub || undefined };
     }
     case 'faceoff':
       return { team: d.team, title: `Faceoff won ${sideName(g, d.team)}${d.player ? ' ' + pLabel(g, d.player) : ''}`, sub: [d.loser ? `vs ${pLabel(g, d.loser, true)}` : '', dotById(d.dot)?.label ?? ''].filter(Boolean).join(' · ') || undefined };
     case 'penalty':
-      return { team: d.team, title: `PENALTY ${sideName(g, d.team)}${d.player ? ' ' + pLabel(g, d.player) : ''}`, sub: `${d.label} · ${d.minutes} min` };
+      return { team: d.team, title: `PENALTY ${sideName(g, d.team)}${d.player ? ' ' + pLabel(g, d.player) : ''}`, sub: `${d.label} · ${d.minutes} min${d.noPP ? ' · no power play' : ''}` };
     case 'shift':
       return { team: d.team, title: `${d.action === 'on' ? 'On ice' : 'Off ice'} ${pLabel(g, d.player)}` };
     case 'goalie':

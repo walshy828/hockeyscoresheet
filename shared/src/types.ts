@@ -99,10 +99,13 @@ export interface GameEvent {
 /* Typed payloads (documentation / helpers) */
 export interface ClockData { running: boolean; remaining: number; period: number }
 export interface GoalData { team: Side; scorer?: string; assists: string[]; strength: Strength; x?: number; y?: number }
-export interface ShotData { team: Side; player?: string; result: 'save' | 'miss' | 'block'; x?: number; y?: number }
+/** `blocker` is the defending player who blocked it; `strength` is the shooting team's strength when taken. */
+export interface ShotData { team: Side; player?: string; result: 'save' | 'miss' | 'block'; blocker?: string; strength?: Strength; x?: number; y?: number }
 /** `team` is the winning side; `player`/`loser` are the winner's and loser's player ids (either may be unknown). `dot` is a FACEOFF_DOTS id. */
 export interface FaceoffData { team: Side; player?: string; loser?: string; dot?: string; x?: number; y?: number }
-export interface PenaltyData { team: Side; player?: string; code: string; label: string; minutes: number; servedBy?: string }
+export type PenaltyCategory = 'minor' | 'double' | 'major' | 'misconduct' | 'game';
+/** `noPP` = the team is not left short-handed (misconducts); absent means it does. */
+export interface PenaltyData { team: Side; player?: string; code: string; label: string; minutes: number; servedBy?: string; category?: PenaltyCategory; noPP?: boolean }
 export interface ShiftData { team: Side; player: string; action: 'on' | 'off' }
 export interface TimeoutData { team: Side }
 export interface NoteData { text: string; audioId?: string }

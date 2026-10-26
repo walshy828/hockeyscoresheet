@@ -164,7 +164,7 @@ export function derive(allEvents: GameEvent[], game: Game, now: number = Date.no
     d.onIce[side].delete(player);
     if (end > start) d.shifts.push({ side, player, start, end });
   };
-  const activeAt = (side: Side, t: number) => d.penalties.filter((p) => p.d.team === side && p.start <= t && t < p.end);
+  const activeAt = (side: Side, t: number) => d.penalties.filter((p) => p.d.team === side && !p.d.noPP && p.start <= t && t < p.end);
 
   for (const e of timeline) {
     const t = te(e);
@@ -191,6 +191,7 @@ export function derive(allEvents: GameEvent[], game: Game, now: number = Date.no
         d.penalties.push(rec);
         d.byPeriod.pim[x.team][pi] += x.minutes;
         if (x.player) stat(x.team, x.player).pim += x.minutes;
+        if (x.noPP) break;
         if (x.minutes <= 2 * rules.minorMinutes) d.ppOpps[other(x.team)]++;
         else if (x.minutes === rules.majorMinutes) d.ppOpps[other(x.team)]++;
         break;
@@ -275,7 +276,7 @@ export function derive(allEvents: GameEvent[], game: Game, now: number = Date.no
 /** Strength for a goal by `team` if it were scored now. */
 export function strengthNow(d: Derived, team: Side): Strength {
   const t = d.nowElapsed;
-  const act = (s: Side) => d.penalties.filter((p) => p.d.team === s && p.start <= t && t < p.end).length;
+  const act = (s: Side) => d.penalties.filter((p) => p.d.team === s && !p.d.noPP && p.start <= t && t < p.end).length;
   const own = act(team), opp = act(other(team));
   if (opp > own) return 'PP';
   if (own > opp) return 'SH';

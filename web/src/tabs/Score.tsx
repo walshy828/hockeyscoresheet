@@ -11,6 +11,7 @@ import { useLocalSetting } from '../theme.ts';
 import { useClock } from '../components/Clock.tsx';
 import { EventTable } from '../components/EventTable.tsx';
 import { EditSheet } from './Log.tsx';
+import { setScoreLayout } from '../layout.ts';
 
 export function useMarkers() {
   const { d } = useGame();
@@ -104,7 +105,7 @@ export function ScoreTab() {
   );
 }
 
-function MoreSheet({ onClose }: { onClose: () => void }) {
+export function MoreSheet({ onClose }: { onClose: () => void }) {
   const { game, actions, saveGame } = useGame();
   const [note, setNote] = useState('');
   return (
@@ -117,6 +118,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
         <div className="row"><VoiceNoteButton /></div>
         <label className="field"><span>Text note</span><textarea style={{ minHeight: 80 }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Goalie hurt, equipment issue, protest…" /></label>
         <button className="btn" disabled={!note.trim()} onClick={async () => { await actions.note(note.trim()); setNote(''); onClose(); }}>Save note</button>
+        <button className="btn" onClick={() => { setScoreLayout('landscape'); onClose(); }}>Switch to landscape scoring layout</button>
         <div className="row">
           <button className="btn grow" onClick={() => { void actions.nextPeriod(); onClose(); }}>Next period</button>
           {game.status !== 'final'
