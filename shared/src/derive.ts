@@ -1,4 +1,4 @@
-import type { ClockData, GameEvent, GoalData, GoalieData, ShiftData, ShotData, Side, Strength, Game, FaceoffData, PenaltyData } from './types.ts';
+import type { ClockData, GameEvent, GoalData, GoalieData, ShiftData, ShotData, Side, Strength, Game, FaceoffData, PenaltyData, PenaltyEndData } from './types.ts';
 import { elapsed, periodLength } from './rules.ts';
 
 export interface PlayerStat {
@@ -19,6 +19,8 @@ export interface FaceoffRec { ev: GameEvent; d: FaceoffData; t: number }
 export interface PenaltyRec {
   ev: GameEvent; d: PenaltyData; start: number; end: number; /** elapsed time it actually ends (may shorten on PP goal) */
   endedByGoal?: boolean;
+  /** taken off the board by hand */
+  removed?: boolean;
 }
 export interface Shift { side: Side; player: string; start: number; end: number }
 
@@ -55,6 +57,13 @@ export interface Derived {
 
 const sides: Side[] = ['home', 'away'];
 export const other = (s: Side): Side => (s === 'home' ? 'away' : 'home');
+
+/** The penalty a power-play goal by `scoring` at elapsed time `t` would release: the earliest-ending active minor (or half of a double minor). */
+function releasable(penalties: PenaltyRec[], scoring: Side, t: number, minor: number): PenaltyRec | undefined {
+  return penalties
+    .filter((p) => p.d.team === other(scoring) && !p.d.noPP && p.start <= t && t < p.end && p.d.minutes <= 2 * minor)
+    .sort((a, b) => a.end - b.end)[0];
+}
 
 /** Resolve voids/edits: returns effective events (not including void/edit events themselves). */
 export function effectiveEvents(all: GameEvent[]): GameEvent[] {
@@ -113,7 +122,19 @@ export function derive(allEvents: GameEvent[], game: Game, now: number = Date.no
   const nowElapsed = elapsed(clock.period, clock.remaining, rules);
   const nPeriods = Math.max(rules.periods + 1, clock.period, ...eff.map((e) => e.period));
 
-  const te = (e: GameEvent) => elapsed(e.period, Math.min(e.clock, periodLength(e.period, rules)), rules);
+  const gameT = (e: GameEvent) => elapsed(e.period, Math.min(e.clock, periodLength(e.period, rules)), rules);
+  // Shift events toggle state, so they must apply in the order they were entered. If the clock was moved
+  // backwards after a shift was logged, a later on/off would otherwise sort *before* the event it answers
+  // and be ignored. Keep each player's shift times from going backwards instead.
+  const shiftT = new Map<string, number>();
+  const lastShift = new Map<string, number>();
+  for (const e of eff.filter((x) => x.type === 'shift').sort((a, b) => a.wall - b.wall || (a.id < b.id ? -1 : 1))) {
+    const pl = (e.data as ShiftData).player;
+    const t = Math.max(gameT(e), lastShift.get(pl) ?? 0);
+    lastShift.set(pl, t);
+    shiftT.set(e.id, t);
+  }
+  const te = (e: GameEvent) => shiftT.get(e.id) ?? gameT(e);
   const timeline = eff.filter((e) => e.type !== 'clock').sort((a, b) => te(a) - te(b) || a.wall - b.wall || (a.id < b.id ? -1 : 1));
 
   const zeroBy = () => ({ home: new Array(nPeriods).fill(0), away: new Array(nPeriods).fill(0) });
@@ -172,9 +193,10 @@ export function derive(allEvents: GameEvent[], game: Game, now: number = Date.no
     switch (e.type) {
       case 'shift': {
         const x = e.data as ShiftData;
+        const st = gameT(e); // real clock time; `t` is only for ordering
         if (x.action === 'on') {
-          if (!open.has(x.player)) { open.set(x.player, t); d.onIce[x.team].add(x.player); stat(x.team, x.player).shifts++; }
-        } else closeShift(x.team, x.player, t);
+          if (!open.has(x.player)) { open.set(x.player, st); d.onIce[x.team].add(x.player); stat(x.team, x.player).shifts++; }
+        } else closeShift(x.team, x.player, st);
         break;
       }
       case 'goalie': {
@@ -213,8 +235,8 @@ export function derive(allEvents: GameEvent[], game: Game, now: number = Date.no
         }
         if (x.strength === 'PP') {
           d.ppGoals[x.team]++;
-          // a minor (or half a double-minor) ends when the PP team scores
-          const act = activeAt(opp, t).filter((p) => p.d.minutes <= 2 * rules.minorMinutes).sort((a, b) => a.end - b.end)[0];
+          // a minor (or half a double-minor) ends when the PP team scores, unless the scorer chose to keep it
+          const act = x.keepPenalty ? undefined : releasable(d.penalties, x.team, t, rules.minorMinutes);
           if (act) {
             if (act.d.minutes === 2 * rules.minorMinutes && act.end - t > rules.minorMinutes * 60) act.end -= rules.minorMinutes * 60;
             else { act.end = t; act.endedByGoal = true; }
@@ -241,6 +263,11 @@ export function derive(allEvents: GameEvent[], game: Game, now: number = Date.no
         if (x.player) stat(x.team, x.player).fow++;
         if (x.loser) stat(other(x.team), x.loser).fol++;
         d.faceoffs.push({ ev: e, d: x, t });
+        break;
+      }
+      case 'penaltyEnd': {
+        const rec = d.penalties.find((p) => p.ev.id === (e.data as PenaltyEndData).target);
+        if (rec && t < rec.end) { rec.end = Math.max(rec.start, t); rec.removed = true; }
         break;
       }
       case 'timeout':
@@ -281,6 +308,11 @@ export function strengthNow(d: Derived, team: Side): Strength {
   if (opp > own) return 'PP';
   if (own > opp) return 'SH';
   return d.goalie[other(team)] === null ? 'EN' : 'EV';
+}
+
+/** The penalty a power-play goal by `team` scored now would release (for the "release penalty" option), if any. */
+export function penaltyReleasedBy(d: Derived, team: Side, minorMinutes: number): PenaltyRec | undefined {
+  return releasable(d.penalties, team, d.nowElapsed, minorMinutes);
 }
 
 export function activePenalties(d: Derived) {

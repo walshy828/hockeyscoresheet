@@ -3,6 +3,7 @@ import { clockAt, fmtClock } from '../../../shared/src/derive.ts';
 import { periodLength, periodName } from '../../../shared/src/rules.ts';
 import { useGame } from '../ctx.ts';
 import { Sheet, useNow } from './ui.tsx';
+import { useMyTeam } from '../teamsearch.ts';
 
 export function useClock() {
   const { events, game, anchor } = useGame();
@@ -18,9 +19,23 @@ let serverOffset = 0;
 export const setServerOffset = (o: number) => { serverOffset = o; };
 
 export function ClockDisplay({ compact }: { compact?: boolean }) {
-  const { canEdit, actions, game } = useGame();
+  const { canEdit, actions, game, d } = useGame();
   const c = useClock();
+  const me = useMyTeam();
   const [open, setOpen] = useState(false);
+  if (game.status === 'final') {
+    // games made before a team was linked have no teamId, so fall back to matching by name
+    const is = (r: typeof game.home) => !!me && (r.teamId === me.id || (!r.teamId && r.name.trim().toLowerCase() === me.name.trim().toLowerCase()));
+    const mine = is(game.home) ? 'home' : is(game.away) ? 'away' : null;
+    const diff = mine ? d.score[mine] - d.score[mine === 'home' ? 'away' : 'home'] : 0;
+    const res = !mine ? null : diff > 0 ? { k: 'win', t: 'WIN' } : diff < 0 ? { k: 'loss', t: 'LOSS' } : { k: 'tie', t: 'TIE' };
+    return (
+      <div className="clockbox">
+        <div className="small muted" style={{ fontWeight: 700 }}>Final result</div>
+        {res ? <div className={`result ${res.k}`}>{res.t}</div> : <div className="result none" aria-label="No result for my team">—</div>}
+      </div>
+    );
+  }
   const cls = c.remaining <= 0 ? 'zero' : c.running ? 'run' : 'stop';
   return (
     <div className="clockbox">

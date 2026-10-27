@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import type { GameEvent, Side } from '../../../shared/src/types.ts';
-import { nearestDot } from '../../../shared/src/rink.ts';
+import { defenderAt, nearestDot, rinkEnds } from '../../../shared/src/rink.ts';
+import { other } from '../../../shared/src/derive.ts';
 import { useGame } from '../ctx.ts';
 import { Rink, type Marker } from '../components/Rink.tsx';
 import { ActionSheet, type ActionInit } from '../components/ActionSheet.tsx';
-import { Sheet, toast } from '../components/ui.tsx';
+import { Sheet, UndoButton, toast } from '../components/ui.tsx';
 import { VoiceButton, VoiceNoteButton } from '../components/Voice.tsx';
 import { sideName } from '../describe.ts';
 import { useLocalSetting } from '../theme.ts';
@@ -31,18 +32,16 @@ export function useVertical() {
 }
 
 export function ScoreTab() {
-  const { game, d, actions, canEdit } = useGame();
+  const { game, d, actions, canEdit, saveGame } = useGame();
   const c = useClock();
   const [pending, setPending] = useState<{ x: number; y: number } | null>(null);
   const [sheet, setSheet] = useState<ActionInit | null>(null);
-  const [more, setMore] = useState(false);
   const [selId, setSelId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [zoom, setZoom] = useState<{ x: number; y: number } | null>(null);
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState<GameEvent | null>(null);
   const rinkRef = useRef<HTMLDivElement>(null);
-  const [flip, setFlip] = useLocalSetting(`flip:${game.id}`, false);
   const base = useMarkers();
   const markers = useMemo<Marker[]>(() => [
     ...base,
@@ -58,15 +57,10 @@ export function ScoreTab() {
   };
   const { vertical, cycle } = useVertical();
 
-  const homeRight = (c.period % 2 === 1) !== flip;
-  const attackRight = (s: Side) => (s === 'home' ? homeRight : !homeRight);
-  const rightTeam: Side = homeRight ? 'home' : 'away';
-  const leftTeam: Side = homeRight ? 'away' : 'home';
-  const mine: Side = game.myTeam ?? 'home';
-  const guess = (x: number): Side => (x >= 100 ? rightTeam : leftTeam);
+  const { leftTeam, rightTeam, leftLabel, rightLabel } = rinkEnds(game);
+  const guess = (x: number): Side => other(defenderAt(game, x));
 
   if (!canEdit) return <div className="banner">View mode — switch to Scoring mode to record events.</div>;
-  void attackRight;
 
   return (
     <div className="col">
@@ -76,13 +70,13 @@ export function ScoreTab() {
         selectedId={selected?.id}
         pending={pending}
         zoom={zoom}
-        leftLabel={leftTeam === mine ? 'OFFENSE' : 'DEFENSE'} rightLabel={rightTeam === mine ? 'OFFENSE' : 'DEFENSE'} leftTeam={leftTeam}
+        leftLabel={leftLabel} rightLabel={rightLabel} leftTeam={leftTeam}
         onTap={(x, y) => { if (picking) { setZoom({ x, y }); setPicking(false); return; } if (moving && selected) { void place(x, y); return; } setPending({ x, y }); setSheet({ kind: 'shot', team: guess(x), x, y }); }}
       /></div>
       {picking && <div className="banner">Tap the area you want to zoom into (e.g. the crease).</div>}
       {moving && selected && <div className="banner">Moving the highlighted {selected.type} — tap its new spot on the rink.</div>}
       <div className="muted small" style={{ textAlign: 'center', marginTop: -4 }}>
-        Tap the rink where the shot or goal came from · <button className="btn sm ghost" onClick={() => { setFlip(!flip); toast('Swapped ends'); }}>⇄ swap ends</button> <button className="btn sm ghost" onClick={cycle}>⟳ rotate</button> {zoom
+        Tap the rink where the shot or goal came from · <button className="btn sm ghost" onClick={cycle}>⟳ rotate</button> {zoom
           ? <button className="btn sm ghost" onClick={() => setZoom(null)}>🔍 zoom out</button>
           : <button className="btn sm ghost" aria-pressed={picking} onClick={() => setPicking(!picking)}>🔍 {picking ? 'cancel zoom' : 'zoom'}</button>}
       </div>
@@ -93,39 +87,12 @@ export function ScoreTab() {
       </div>
       <div className="row wrap">
         <VoiceButton onOpenAction={(i) => setSheet(i)} />
-        <button className="btn grow" onClick={() => void actions.undoLast()}>↶ Undo</button>
-        <button className="btn grow" onClick={() => setMore(true)}>More…</button>
+        <UndoButton className="btn grow" onUndo={() => void actions.undoLast()} />
       </div>
       <EventTable selectedId={selected?.id ?? null} onSelect={select} onEdit={setEditing} moving={moving}
         onMove={() => { setMoving((m) => !m); rinkRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }} />
       {editing && <EditSheet e={editing} onClose={() => setEditing(null)} />}
       {sheet && <ActionSheet key={`${sheet.kind}${sheet.x}${sheet.y}`} init={sheet} onClose={() => { setSheet(null); setPending(null); }} />}
-      {more && <MoreSheet onClose={() => setMore(false)} />}
     </div>
-  );
-}
-
-export function MoreSheet({ onClose }: { onClose: () => void }) {
-  const { game, actions, saveGame } = useGame();
-  const [note, setNote] = useState('');
-  return (
-    <Sheet title="More" onClose={onClose}>
-      <div className="col">
-        <div className="row">
-          <button className="btn grow" onClick={() => { void actions.timeout('home'); onClose(); }}>Timeout {sideName(game, 'home')}</button>
-          <button className="btn grow" onClick={() => { void actions.timeout('away'); onClose(); }}>Timeout {sideName(game, 'away')}</button>
-        </div>
-        <div className="row"><VoiceNoteButton /></div>
-        <label className="field"><span>Text note</span><textarea style={{ minHeight: 80 }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Goalie hurt, equipment issue, protest…" /></label>
-        <button className="btn" disabled={!note.trim()} onClick={async () => { await actions.note(note.trim()); setNote(''); onClose(); }}>Save note</button>
-        <button className="btn" onClick={() => { setScoreLayout('landscape'); onClose(); }}>Switch to landscape scoring layout</button>
-        <div className="row">
-          <button className="btn grow" onClick={() => { void actions.nextPeriod(); onClose(); }}>Next period</button>
-          {game.status !== 'final'
-            ? <button className="btn grow danger" onClick={async () => { await saveGame?.({ ...game, status: 'final' }); toast('Game marked final'); onClose(); }}>End game (final)</button>
-            : <button className="btn grow" onClick={async () => { await saveGame?.({ ...game, status: 'live' }); onClose(); }}>Reopen game</button>}
-        </div>
-      </div>
-    </Sheet>
   );
 }

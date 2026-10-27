@@ -3,8 +3,9 @@ import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import type { Game, GameEvent } from '../../shared/src/types.ts';
 import { checkPin, hashPin, type Store } from './db.ts';
+import { LEAGUE_RE, MHL_BASE, REF_RE, SEASON_RE, parseDirectory, parseLeagues, parseTeamPage, type ExtTeamRef } from '../../shared/src/mhl.ts';
 
-const EVENT_TYPES = new Set(['clock', 'goal', 'shot', 'faceoff', 'penalty', 'shift', 'goalie', 'timeout', 'note', 'void', 'edit']);
+const EVENT_TYPES = new Set(['clock', 'goal', 'shot', 'faceoff', 'penalty', 'shift', 'goalie', 'timeout', 'note', 'penaltyEnd', 'void', 'edit']);
 
 interface Batch { gameId: string; pin: string; game?: Game; events?: GameEvent[] }
 
@@ -16,6 +17,9 @@ function validEvent(e: any, gameId: string): e is GameEvent {
     && Number.isFinite(e.wall) && e.data && typeof e.data === 'object';
 }
 
+const TTL = { team: 15 * 60_000, directory: 24 * 3600_000 };
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
 export function buildApp(store: Store, opts: { staticDir?: string; logger?: boolean } = {}): FastifyInstance {
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 12 * 1024 * 1024 });
   const listeners = new Map<string, Set<Listener>>(); // by view token
@@ -24,6 +28,60 @@ export function buildApp(store: Store, opts: { staticDir?: string; logger?: bool
   const broadcast = (token: string, msg: Parameters<Listener>[0]) => listeners.get(token)?.forEach((l) => l(msg));
 
   app.addContentTypeParser(/^(audio|application\/octet-stream)/, { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
+
+  // ---- MyHockeyLive (MIAA) proxy: browsers can't call it directly (CORS), and we cache to be polite ----
+  const cache = new Map<string, { at: number; val: unknown }>();
+  const cached = async <T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> => {
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < ttl) return hit.val as T;
+    const val = await load();
+    cache.set(key, { at: Date.now(), val });
+    return val;
+  };
+  const fetchPage = async (path: string) => {
+    const r = await fetch(MHL_BASE + path, { headers: { 'User-Agent': 'hockeyscoresheet/1.0 (roster import)' }, signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) throw new Error(`upstream ${r.status}`);
+    return r.text();
+  };
+  const seasonQ = (season?: string) => (season ? `season=${season}` : '');
+
+  /** Leagues + (when league given) its teams, or the whole directory (26 letter pages, cached a day). */
+  app.get('/api/ext/directory', async (req, reply) => {
+    const { season, league } = req.query as { season?: string; league?: string };
+    if ((season && !SEASON_RE.test(season)) || (league && !LEAGUE_RE.test(league))) return reply.code(400).send({ error: 'bad request' });
+    try {
+      const qs = [seasonQ(season), league ? `league=${league}` : ''].filter(Boolean).join('&');
+      const first = await cached(`dir-first:${qs}`, TTL.directory, () => fetchPage(`/miaa/teams${qs ? `?${qs}` : ''}`));
+      const leagues = parseLeagues(first);
+      if (league) return { leagues, teams: parseDirectory(first) };
+      const teams = await cached(`dir:${season ?? ''}`, TTL.directory, async () => {
+        const seen = new Map<string, ExtTeamRef>();
+        for (let i = 0; i < LETTERS.length; i += 6) {
+          const pages = await Promise.all(LETTERS.slice(i, i + 6).map((l) => fetchPage(`/miaa/teams?${[seasonQ(season), `letter=${l}`].filter(Boolean).join('&')}`)));
+          for (const h of pages) for (const t of parseDirectory(h)) seen.set(t.ref, t);
+        }
+        return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+      });
+      return { leagues, teams };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({ error: 'MyHockeyLive unavailable' });
+    }
+  });
+
+  app.get('/api/ext/team/:ref', async (req, reply) => {
+    const ref = (req.params as any).ref as string;
+    if (!REF_RE.test(ref)) return reply.code(400).send({ error: 'bad request' });
+    try {
+      const html = await cached(`team:${ref}`, TTL.team, () => fetchPage(`/miaa/teams/${ref}`));
+      const team = parseTeamPage(html, ref);
+      if (!team.players.length && !team.name) return reply.code(404).send({ error: 'not found' });
+      return { team, fetched: Date.now() };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({ error: 'MyHockeyLive unavailable' });
+    }
+  });
 
   app.get('/api/health', async () => ({ ok: true, now: Date.now() }));
 

@@ -8,6 +8,7 @@ import { sideName } from '../describe.ts';
 import { Confirm, Sheet, toast } from '../components/ui.tsx';
 import { ShareSheet } from '../components/ShareSheet.tsx';
 import { useSyncStatus } from '../sync.ts';
+import { teamMatches, useMyTeamId } from '../teamsearch.ts';
 
 export function Games() {
   const nav = useNavigate();
@@ -18,14 +19,18 @@ export function Games() {
   const [share, setShare] = useState<LocalGame | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const st = useSyncStatus();
+  const myId = useMyTeamId();
+  const [q, setQ] = useState('');
 
   const rows = useMemo(() => {
     if (!games) return [];
-    return games.filter((g) => !!g.deleted === showDeleted).sort((a, b) => b.date.localeCompare(a.date)).map((g) => {
+    const hit = (g: LocalGame) => ['home', 'away'].some((s) => { const r = g[s as 'home' | 'away']; return teamMatches({ id: '', name: r.name, color: '', players: r.players, updated: 0 }, q); }) || `${g.venue} ${g.level}`.toLowerCase().includes(q.trim().toLowerCase());
+    const mine = (g: LocalGame) => (myId && (g.home.teamId === myId || g.away.teamId === myId) ? 0 : 1);
+    return games.filter((g) => !!g.deleted === showDeleted && hit(g)).sort((a, b) => mine(a) - mine(b) || b.date.localeCompare(a.date)).map((g) => {
       const evs = (events ?? []).filter((e) => e.gameId === g.id);
       return { g, evs, d: derive(evs, g) };
     });
-  }, [games, events, showDeleted]);
+  }, [games, events, showDeleted, q, myId]);
 
   const dup = async (g: LocalGame) => {
     const id = uid();
@@ -41,10 +46,13 @@ export function Games() {
       <div className="topbar">
         <h1>Games</h1>
         <button className="btn sm ghost" onClick={() => setShowDeleted(!showDeleted)}>{showDeleted ? 'Show games' : 'Deleted'}</button>
+        <button className="btn sm ghost" onClick={() => nav('/schedule')}>Schedule</button>
         <button className="btn sm" onClick={() => nav('/join')}>Join</button>
       </div>
       <div className="col">
-        {games && rows.length === 0 && (
+        {(games?.length ?? 0) > 0 && <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search teams or players" aria-label="Search games by team or player" />}
+        {games && rows.length === 0 && q.trim() && <div className="card muted">No games match “{q}”.</div>}
+        {games && rows.length === 0 && !q.trim() && (
           <div className="card col" style={{ textAlign: 'center' }}>
             <b>{showDeleted ? 'No deleted games' : 'No games yet'}</b>
             {!showDeleted && <span className="muted">Create a team with its roster, then start a game. Everything works without internet.</span>}
@@ -57,6 +65,8 @@ export function Games() {
               <div className="row small muted" style={{ marginBottom: 6 }}>
                 <span className={`badge ${g.status}`}>{g.status === 'live' ? '● live' : g.status}</span>
                 <span>{g.date.replace('T', ' ')}</span>
+                {g.gameNo ? <span>· Game {g.gameNo}</span> : null}
+                {myId && (g.home.teamId === myId || g.away.teamId === myId) ? <span title="My team">★</span> : null}
                 {g.dirty ? <span title="Not yet synced">⟳</span> : null}
               </div>
               <div className="row"><span className="dot home" style={{ background: g.home.color }} /><b className="grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sideName(g, 'home')}</b><b style={{ fontSize: 24 }}>{d.score.home}</b></div>

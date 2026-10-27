@@ -1,4 +1,4 @@
-import type { Strength } from './types.ts';
+import type { Game, Side, Strength } from './types.ts';
 
 /** Faceoff dots in rink coordinates (200 x 85, horizontal). Ids are stable; they are stored on events. */
 export interface FaceoffDot { id: string; x: number; y: number; label: string }
@@ -27,3 +27,21 @@ export const STRENGTH_INFO: Record<Strength, string> = {
   EN: 'Empty net — scored on a net with the goalie pulled',
   PS: 'Penalty shot / shootout',
 };
+
+/**
+ * The rink is drawn the same way all game: each team owns one end (its defensive zone) regardless of period,
+ * so shots at a team's net always land on that team's end.
+ */
+export function rinkEnds(game: Pick<Game, 'homeOnLeft'> & { home?: { name?: string }; away?: { name?: string } }) {
+  const homeLeft = game.homeOnLeft ?? true;
+  const leftTeam: Side = homeLeft ? 'home' : 'away';
+  const rightTeam: Side = homeLeft ? 'away' : 'home';
+  const label = (s: Side) => game[s]?.name?.trim() || (s === 'home' ? 'HOME' : 'AWAY');
+  return { leftTeam, rightTeam, leftLabel: label(leftTeam), rightLabel: label(rightTeam) };
+}
+
+/** The team defending the end of the rink containing `x`; a shot taken there comes from the other team. */
+export function defenderAt(game: Pick<Game, 'homeOnLeft'>, x: number): Side {
+  const { leftTeam, rightTeam } = rinkEnds(game);
+  return x >= 100 ? rightTeam : leftTeam;
+}

@@ -7,12 +7,13 @@ import { pLabel, sideName } from '../describe.ts';
 import { Rink, type Marker } from '../components/Rink.tsx';
 import { AudioPlayer } from '../components/Voice.tsx';
 import { sortPlayers } from '../components/ui.tsx';
+import { MarkerInfo } from '../components/MarkerInfo.tsx';
 import { useMarkers, useVertical } from './Score.tsx';
 
 const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
 const pct = (a: number, b: number) => (a + b ? Math.round((a / (a + b)) * 100) : 0);
 
-function Compare({ label, a, b, fmt = (n: number) => String(n), bar }: { label: string; a: number; b: number; fmt?: (n: number) => string; bar?: boolean }) {
+export function Compare({ label, a, b, fmt = (n: number) => String(n), bar }: { label: string; a: number; b: number; fmt?: (n: number) => string; bar?: boolean }) {
   const total = a + b;
   return (
     <div className="stat-row">
@@ -156,6 +157,7 @@ export function ShotsTab() {
   const [type, setType] = useState<'all' | 'goal' | 'shot'>('all');
   const [heat, setHeat] = useState(false);
   const { vertical, cycle } = useVertical();
+  const [info, setInfo] = useState<string | null>(null);
   const byId = useMemo(() => new Map(d.events.map((e) => [e.id, e])), [d]);
   const markers = all.filter((m) => (team === 'all' || m.team === team) && (!period || byId.get(m.id)?.period === period) && (type === 'all' || (type === 'goal' ? m.kind === 'goal' : m.kind !== 'goal')));
   const np = Math.max(game.rules.periods, d.clock.period);
@@ -176,7 +178,8 @@ export function ShotsTab() {
         <button className={`btn ${heat ? 'primary' : ''}`} onClick={() => setHeat(!heat)}>🔥 Heat</button>
         <button className="btn icon" aria-label="Rotate rink" onClick={cycle}>⟳</button>
       </div>
-      <Rink vertical={vertical} markers={markers} heat={heat} maxVh={66} />
+      <Rink vertical={vertical} markers={markers} heat={heat} maxVh={66} onMarker={setInfo} />
+      {info && <MarkerInfo id={info} onClose={() => setInfo(null)} />}
       <div className="row wrap small muted" style={{ justifyContent: 'center' }}>
         <span>★ goal</span><span>● on goal</span><span>✕ missed</span><span>▪ blocked</span>
         <span style={{ color: 'var(--home)' }}>■ {sideName(game, 'home')}</span><span style={{ color: 'var(--away)' }}>■ {sideName(game, 'away')}</span>
@@ -206,6 +209,7 @@ export function FaceoffsTab() {
   const w = (s: Side) => sum(d.byPeriod.fo[s]);
   const markers: Marker[] = d.faceoffs.filter((f) => f.d.x != null).map((f) => ({ id: f.ev.id, x: f.d.x!, y: f.d.y!, team: f.d.team, kind: 'faceoff' }));
   const { vertical } = useVertical();
+  const [info, setInfo] = useState<string | null>(null);
   const rows = [...d.players.entries()].filter(([, t]) => t.fow + t.fol > 0).sort((a, b) => b[1].fow - a[1].fow);
   return (
     <div className="col">
@@ -225,7 +229,8 @@ export function FaceoffsTab() {
             <tbody>{rows.map(([id, t]) => <tr key={id}><td><span className={`dot ${t.side}`} style={{ display: 'inline-block', marginRight: 6 }} />{pLabel(game, id)}</td><td>{t.fow}</td><td>{t.fol}</td><td>{pct(t.fow, t.fol)}%</td></tr>)}</tbody></table>
         </div>
       )}
-      {markers.length > 0 && <Rink vertical={vertical} markers={markers} maxVh={55} />}
+      {markers.length > 0 && <Rink vertical={vertical} markers={markers} maxVh={55} onMarker={setInfo} />}
+      {info && <MarkerInfo id={info} onClose={() => setInfo(null)} />}
     </div>
   );
 }

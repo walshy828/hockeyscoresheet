@@ -2,12 +2,15 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useRef, useState } from 'react';
 import { db, exportAll, importAll, kvGet, kvSet } from '../db.ts';
 import { syncNow, useSyncStatus } from '../sync.ts';
-import { useLocalSetting, useThemePref, type ThemePref } from '../theme.ts';
+import { ACCENT_PRESETS, DEFAULT_ACCENT, useAccent, useLocalSetting, useThemePref, type ThemePref } from '../theme.ts';
 import { DEFAULT_PRESET, PRESET_LABELS } from '../../../shared/src/rules.ts';
 import { download, toast } from '../components/ui.tsx';
+import { setScoreLayout, useScoreLayout } from '../layout.ts';
 
 export function Settings() {
   const [theme, setTheme] = useThemePref();
+  const layout = useScoreLayout();
+  const [accent, setAccent] = useAccent();
   const [haptics, setHaptics] = useLocalSetting('haptics', true);
   const [lang, setLang] = useLocalSetting('voiceLang', 'en-US');
   const preset = useLiveQuery(() => kvGet('defaultPreset', DEFAULT_PRESET), []) ?? DEFAULT_PRESET;
@@ -27,6 +30,25 @@ export function Settings() {
             {(['system', 'light', 'dark'] as ThemePref[]).map((t) => (
               <button key={t} className={theme === t ? 'on' : ''} onClick={() => setTheme(t)}>{t[0].toUpperCase() + t.slice(1)}</button>
             ))}
+          </div>
+          <div className="field"><span>Accent colour</span>
+            <div className="swatches" role="radiogroup" aria-label="Accent colour">
+              {ACCENT_PRESETS.map((a) => (
+                <button key={a.hex} role="radio" aria-checked={accent.toLowerCase() === a.hex} aria-label={a.name} title={a.name}
+                  className={`swatch ${accent.toLowerCase() === a.hex ? 'on' : ''}`} style={{ '--sw': a.hex } as React.CSSProperties} onClick={() => setAccent(a.hex)} />
+              ))}
+              <label className={`swatch custom ${ACCENT_PRESETS.some((a) => a.hex === accent.toLowerCase()) ? '' : 'on'}`} style={{ '--sw': accent } as React.CSSProperties} title="Custom colour">
+                <input type="color" aria-label="Custom accent colour" value={accent} onChange={(e) => setAccent(e.target.value)} />
+              </label>
+            </div>
+            <span className="muted small">Used for buttons, selection and highlights in both light and dark mode. Goals, penalties and team colours keep their own meaning.</span>
+            {accent.toLowerCase() !== DEFAULT_ACCENT && <button className="btn sm ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setAccent(DEFAULT_ACCENT)}>Reset to default</button>}
+          </div>
+          <div className="field"><span>Scoring layout</span>
+            <div className="seg" role="radiogroup" aria-label="Scoring layout">
+              <button className={layout.pref !== 'classic' ? 'on' : ''} onClick={() => setScoreLayout('landscape')}>Landscape</button>
+              <button className={layout.pref === 'classic' ? 'on' : ''} onClick={() => setScoreLayout('classic')}>Classic (going away)</button>
+            </div>
           </div>
           <label className="row"><input type="checkbox" style={{ width: 24, minHeight: 24 }} checked={haptics} onChange={(e) => setHaptics(e.target.checked)} /> Vibrate on tap (Android)</label>
         </div>

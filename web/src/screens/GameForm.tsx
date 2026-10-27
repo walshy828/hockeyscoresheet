@@ -9,6 +9,8 @@ import { RosterEditor } from '../components/RosterEditor.tsx';
 import { kvGet } from '../db.ts';
 import { syncRoster } from '../roster.ts';
 import { Confirm, toast } from '../components/ui.tsx';
+import { useMyTeamId } from '../teamsearch.ts';
+import { carryLineSet, emptyLineSet, findPriorLines } from '../../../shared/src/lines.ts';
 
 const localNow = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 const randomPin = () => String(Math.floor(1000 + Math.random() * 9000));
@@ -22,8 +24,13 @@ export function GameForm() {
   const teams = (useLiveQuery(() => db.teams.toArray(), []) ?? []).filter((t) => !t.deleted);
   const existing = useLiveQuery(() => (id ? db.games.get(id) : undefined), [id]);
   const [g, setG] = useState<Game | null>(null);
+  const myId = useMyTeamId();
   const [pin, setPin] = useState(randomPin);
   const [syncing, setSyncing] = useState<Side | null>(null);
+  // per side: reuse the lines saved in that team's most recent earlier game (on by default when one exists)
+  const [carry, setCarry] = useState<Record<Side, boolean | undefined>>({ home: undefined, away: undefined });
+  const allGames = useLiveQuery(() => db.games.toArray(), []) ?? [];
+  const priorFor = (s: Side) => (g && !editing ? findPriorLines(allGames, g[s], g.id, g.date) : null);
   // switching teams on a game that already has events would orphan the players they reference
   const hasEvents = useLiveQuery(() => (id ? db.events.where('gameId').equals(id).count().then((n) => n > 0) : false), [id]) ?? false;
 
@@ -37,14 +44,31 @@ export function GameForm() {
     }));
   }, [editing, existing, g]);
 
+  // new games start with my team on the home side; the swap button below flips it
+  const myTeam = teams.find((t) => t.id === myId);
+  useEffect(() => {
+    if (editing || !g || !myTeam || g.home.teamId || g.away.teamId || g.home.players.length) return;
+    setG({ ...g, home: copyTeam(myTeam) });
+  }, [editing, g, myTeam]);
+
   if (!g) return <div className="page muted">Loading…</div>;
+  const hasMine = !myId || g.home.teamId === myId || g.away.teamId === myId;
   const setRules = (patch: Partial<Rules>) => setG({ ...g, rules: { ...g.rules, ...patch } });
   const setSide = (s: Side, r: Roster) => setG({ ...g, [s]: r });
   const valid = g.home.name.trim() && g.away.name.trim() && (editing || pin.length >= 4);
 
   const save = async () => {
-    if (!editing) await db.secrets.put({ gameId: g.id, pin });
-    await saveGame(g);
+    let out = g;
+    if (!editing) {
+      await db.secrets.put({ gameId: g.id, pin });
+      for (const s of ['home', 'away'] as Side[]) {
+        const prior = priorFor(s);
+        if (!prior || carry[s] === false) continue;
+        const lines = out.lines ?? { home: emptyLineSet(), away: emptyLineSet() };
+        out = { ...out, lines: { ...lines, [s]: carryLineSet(prior.game.lines![prior.side]!, prior.game[prior.side].players, g[s].players) } };
+      }
+    }
+    await saveGame(out);
     nav(editing ? `/game/${g.id}` : `/game/${g.id}`, { replace: true });
   };
 
@@ -82,6 +106,18 @@ export function GameForm() {
         <label className="field grow"><span>Name</span><input value={g[s].name} onChange={(e) => setSide(s, { ...g[s], name: e.target.value })} /></label>
         <label className="field" style={{ width: 80 }}><span>Color</span><input type="color" style={{ padding: 2 }} value={g[s].color} onChange={(e) => setSide(s, { ...g[s], color: e.target.value })} /></label>
       </div>
+      {(() => {
+        const prior = priorFor(s);
+        if (!prior) return null;
+        const when = prior.game.date.slice(0, 10);
+        const vs = prior.game[prior.side === 'home' ? 'away' : 'home'].name;
+        return (
+          <label className="row" style={{ minHeight: 44, gap: 10 }}>
+            <input type="checkbox" checked={carry[s] !== false} onChange={(e) => setCarry({ ...carry, [s]: e.target.checked })} />
+            <span>Carry over lines from last game <span className="muted small">({when}{vs ? ` vs ${vs}` : ''})</span></span>
+          </label>
+        );
+      })()}
       <details>
         <summary style={{ minHeight: 44, display: 'flex', alignItems: 'center', fontWeight: 600 }}>Roster ({g[s].players.filter((p) => !p.scratched).length} playing of {g[s].players.length})</summary>
         <p className="muted small">Uncheck a player who isn't playing in this game. This game keeps its own roster copy; team changes only arrive when you sync.</p>
@@ -98,11 +134,13 @@ export function GameForm() {
         <h1>{editing ? 'Edit game' : 'New game'}</h1>
       </div>
       <div className="col">
+        {myTeam && !hasMine && <div className="card muted small">⚠ Your team ({myTeam.name}) isn't in this game, so it won't count toward season stats.</div>}
         {sideEditor('home')}
+        {!(editing && hasEvents) && <button type="button" className="btn" onClick={() => setG({ ...g, home: g.away, away: g.home })}>⇅ Swap home / away</button>}
         {sideEditor('away')}
         <div className="card col">
-          <span className="muted small">Which team are you scoring for? Offense/defense on the rink is shown from their view.</span>
-          <div className="seg">{(['home', 'away'] as Side[]).map((s) => <button key={s} type="button" className={`${s} ${(g.myTeam ?? 'home') === s ? 'on' : ''}`} onClick={() => setG({ ...g, myTeam: s })}>{g[s].name || (s === 'home' ? 'Home' : 'Away')}</button>)}</div>
+          <span className="muted small">Which end of the rink is the home team's defensive zone? The rink stays this way all game.</span>
+          <div className="seg">{[true, false].map((l) => <button key={String(l)} type="button" className={(g.homeOnLeft ?? true) === l ? 'on' : ''} onClick={() => setG({ ...g, homeOnLeft: l })}>{l ? '◀ Home on left' : 'Home on right ▶'}</button>)}</div>
         </div>
         <div className="card col">
           <label className="field"><span>Date &amp; time</span><input type="datetime-local" value={g.date} onChange={(e) => setG({ ...g, date: e.target.value })} /></label>

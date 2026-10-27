@@ -7,6 +7,8 @@ import { uid } from './ids.ts';
 import { pLabel, sideName } from './describe.ts';
 import { toast } from './components/ui.tsx';
 
+export interface ClockTime { period: number; clock: number }
+
 export interface Actions {
   emit: (type: EventType, data: Record<string, any>, over?: { period?: number; clock?: number }) => Promise<GameEvent>;
   clockNow: () => { period: number; running: boolean; remaining: number };
@@ -14,10 +16,13 @@ export interface Actions {
   adjustClock: (deltaSec: number) => Promise<void>;
   setClock: (remaining: number, period?: number, running?: boolean) => Promise<void>;
   nextPeriod: () => Promise<void>;
-  goal: (x: Omit<GoalData, 'strength'> & { strength?: GoalData['strength'] }) => Promise<void>;
-  shot: (x: ShotData) => Promise<void>;
+  /** `at` overrides the game-clock time the event is stamped with (default: the clock right now) */
+  goal: (x: Omit<GoalData, 'strength'> & { strength?: GoalData['strength'] }, at?: ClockTime) => Promise<void>;
+  shot: (x: ShotData, at?: ClockTime) => Promise<void>;
   faceoff: (x: FaceoffData) => Promise<void>;
-  penalty: (x: PenaltyData) => Promise<void>;
+  penalty: (x: PenaltyData, at?: ClockTime) => Promise<void>;
+  /** take a penalty off the board early */
+  endPenalty: (id: string) => Promise<void>;
   timeout: (team: Side) => Promise<void>;
   note: (text: string, audioId?: string) => Promise<void>;
   shift: (team: Side, player: string, action: 'on' | 'off') => Promise<void>;
@@ -80,15 +85,15 @@ export function useActions(game: Game, events: GameEvent[], d: Derived): Actions
         await clockEvt(periodLength(n, gRef.current.rules), n, false);
         toast(`${periodName(n, gRef.current.rules)} ready`);
       },
-      goal: async (x) => {
+      goal: async (x, at) => {
         const strength = x.strength ?? strengthNow(dRef.current, x.team);
         lastTeam.current = x.team;
-        const e = await emit('goal', { ...x, strength, assists: x.assists.filter(Boolean) });
+        const e = await emit('goal', { ...x, strength, assists: x.assists.filter(Boolean) }, at);
         withUndo(`GOAL ${nm(x.team)} ${x.scorer ? pLabel(gRef.current, x.scorer, true) : ''} (${strength})`, e);
       },
-      shot: async (x) => {
+      shot: async (x, at) => {
         lastTeam.current = x.team;
-        const e = await emit('shot', x);
+        const e = await emit('shot', x, at);
         withUndo(`${x.result === 'save' ? 'Shot' : x.result === 'miss' ? 'Miss' : 'Block'} ${nm(x.team)} ${x.player ? pLabel(gRef.current, x.player, true) : ''}`, e);
       },
       faceoff: async (x) => {
@@ -96,10 +101,16 @@ export function useActions(game: Game, events: GameEvent[], d: Derived): Actions
         const e = await emit('faceoff', x);
         withUndo(`Faceoff won ${nm(x.team)}`, e);
       },
-      penalty: async (x) => {
+      penalty: async (x, at) => {
         lastTeam.current = x.team;
-        const e = await emit('penalty', x);
+        const e = await emit('penalty', x, at);
         withUndo(`${nm(x.team)} ${x.label} ${x.minutes}min`, e);
+      },
+      endPenalty: async (id) => {
+        const p = dRef.current.penalties.find((r) => r.ev.id === id);
+        if (!p) return;
+        const e = await emit('penaltyEnd', { target: id, team: p.d.team });
+        withUndo(`Penalty removed: ${nm(p.d.team)} ${p.d.label}`, e);
       },
       timeout: async (team) => { const e = await emit('timeout', { team }); withUndo(`Timeout ${nm(team)}`, e); },
       note: async (text, audioId) => { const e = await emit('note', { text, audioId }); withUndo('Note saved', e); },

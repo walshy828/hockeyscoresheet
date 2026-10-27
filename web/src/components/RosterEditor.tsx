@@ -2,11 +2,12 @@ import { useState } from 'react';
 import type { Player } from '../../../shared/src/types.ts';
 import { uid } from '../ids.ts';
 import { parseRoster } from '../roster.ts';
-import { POS, Sheet } from './ui.tsx';
+import { Confirm, POS, Sheet } from './ui.tsx';
 
 /** `perGame` adds a Playing checkbox per player (unchecked = scratched for this game only). */
 export function RosterEditor({ players, onChange, perGame }: { players: Player[]; onChange: (p: Player[]) => void; perGame?: boolean }) {
   const [paste, setPaste] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Player | null>(null);
   const upd = (id: string, patch: Partial<Player>) => onChange(players.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const sorted = [...players].sort((a, b) => Number(a.number) - Number(b.number));
   const dup = new Set(players.map((p) => p.number).filter((n, i, a) => n && a.indexOf(n) !== i));
@@ -24,7 +25,7 @@ export function RosterEditor({ players, onChange, perGame }: { players: Player[]
           <select aria-label="Captain" style={{ width: 62 }} value={p.captain ?? ''} onChange={(e) => upd(p.id, { captain: (e.target.value || undefined) as Player['captain'] })}>
             <option value="">–</option><option value="C">C</option><option value="A">A</option>
           </select>
-          <button className="btn icon danger" aria-label={`Remove ${p.name || p.number}`} onClick={() => onChange(players.filter((x) => x.id !== p.id))}>✕</button>
+          <button className="btn icon danger" aria-label={`Remove ${p.name || p.number}`} onClick={() => setRemoving(p)}>✕</button>
         </div>
       ))}
       {dup.size > 0 && <div className="banner">Duplicate jersey numbers: {[...dup].join(', ')}</div>}
@@ -32,6 +33,11 @@ export function RosterEditor({ players, onChange, perGame }: { players: Player[]
         <button className="btn grow" onClick={() => onChange([...players, { id: uid(), number: '', name: '', pos: 'F' }])}>＋ Add player</button>
         <button className="btn grow" onClick={() => setPaste('')}>Paste roster</button>
       </div>
+      {removing && (
+        <Confirm danger title="Remove player?" body={`Remove ${[removing.number && `#${removing.number}`, removing.name].filter(Boolean).join(' ') || 'this player'} from the roster?`} confirm="Remove"
+          onNo={() => setRemoving(null)}
+          onYes={() => { onChange(players.filter((x) => x.id !== removing.id)); setRemoving(null); }} />
+      )}
       {paste !== null && (
         <Sheet title="Paste roster" onClose={() => setPaste(null)}>
           <p className="muted small">One player per line: number, name, position (C, LW, RW, D, G). Example: <code>12 Jane Smith C</code></p>

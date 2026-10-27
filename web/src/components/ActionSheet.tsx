@@ -5,8 +5,9 @@ import { penaltyTypes } from '../../../shared/src/rules.ts';
 import { useGame } from '../ctx.ts';
 import { STRENGTH_INFO, dotById, nearestDot } from '../../../shared/src/rink.ts';
 import { PlayerChip, Sheet, sortPlayers, useLongPress } from './ui.tsx';
+import { InfractionPicker } from './InfractionPicker.tsx';
 import { Rink } from './Rink.tsx';
-import { sideName } from '../describe.ts';
+import { pLabel, sideName } from '../describe.ts';
 
 export type ActionKind = 'shot' | 'goal' | 'faceoff' | 'penalty';
 export interface ActionInit { kind: ActionKind; team: Side; x?: number; y?: number; player?: string }
@@ -79,7 +80,7 @@ export function ActionSheet({ init, onClose }: { init: ActionInit; onClose: () =
             {['Scorer', 'Assist', 'Assist'].map((l, i) => (
               <div key={i} className="card grow" style={{ padding: 8, textAlign: 'center' }}>
                 <div className="muted small">{l}</div>
-                <b style={{ fontSize: 20 }}>{pick[i] ? '#' + (game[team].players.find((p) => p.id === pick[i])?.number ?? '?') : pick.length === i ? '▸' : '–'}</b>
+                <b style={{ fontSize: 20 }}>{pick[i] ? pLabel(game, pick[i], true) : pick.length === i ? '▸' : '–'}</b>
               </div>
             ))}
           </div>
@@ -95,7 +96,7 @@ export function ActionSheet({ init, onClose }: { init: ActionInit; onClose: () =
         {kind === 'faceoff' && (() => {
           const pickP = (side: Side, id: string) => setFo((f) => ({ ...f, [side]: f[side] === id ? undefined : id }));
           const dot = dotById(fo.dot);
-          const num = (side: Side) => { const p = game[side].players.find((x) => x.id === fo[side]); return p ? `#${p.number}` : 'unknown'; };
+          const num = (side: Side) => (fo[side] ? pLabel(game, fo[side], true) : 'unknown');
           const rec = (w: Side) => done(() => actions.faceoff({
             team: w, player: fo[w], loser: fo[w === 'home' ? 'away' : 'home'], dot: dot?.id, x: dot?.x, y: dot?.y,
           }));
@@ -126,11 +127,7 @@ export function ActionSheet({ init, onClose }: { init: ActionInit; onClose: () =
         {kind === 'penalty' && (<>
           <div className="muted small">Player (optional)</div>
           {chips(team, 1)}
-          <div className="chips">
-            {penaltyTypes(game.rules).map((t) => (
-              <button key={t.code} className={`btn sm ${pen?.code === t.code ? 'primary' : ''}`} onClick={() => { setPen(t); setMins(t.minutes); }}>{t.label}</button>
-            ))}
-          </div>
+          <InfractionPicker types={penaltyTypes(game.rules)} selected={pen?.code} onPick={(t) => { setPen(t); setMins(t.minutes); }} />
           <div className="seg" aria-label="Minutes">
             {[2, 4, 5, 10].map((m) => <button key={m} className={(mins ?? pen?.minutes) === m ? 'on' : ''} onClick={() => setMins(m)}>{m} min</button>)}
           </div>

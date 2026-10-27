@@ -23,6 +23,8 @@ export interface PenaltyType {
   code: string;
   label: string;
   minutes: number;
+  /** usually called with an automatic game misconduct / ejection */
+  gm?: boolean;
 }
 
 export interface Rules {
@@ -45,6 +47,11 @@ export interface Team {
   name: string;
   color: string;
   players: Player[];
+  /** league / division this team plays in */
+  league?: string;
+  favorite?: boolean;
+  /** link to an online record (MyHockeyLive MIAA) used to import rosters and compare stats */
+  source?: { provider: 'myhockeylive'; ref: string; name: string; season: string; syncedAt?: number };
   updated: number;
   deleted?: boolean;
 }
@@ -60,10 +67,13 @@ export interface Game {
   rules: Rules;
   home: Roster;
   away: Roster;
-  /** the side being scored for; drives offense/defense on the rink. Defaults to home. */
-  myTeam?: Side;
+  /** which end of the rink is home's defensive zone, for every period. Defaults to true (home on the left). */
+  homeOnLeft?: boolean;
   /** saved forward/defense/PP/PK line combinations per side */
   lines?: Lines;
+  /** season label (e.g. "2026-27") and 1-based position in that season's schedule, for season stats */
+  season?: string;
+  gameNo?: number;
   status: 'scheduled' | 'live' | 'final';
   notes: string;
   created: number;
@@ -81,6 +91,7 @@ export type EventType =
   | 'goalie'
   | 'timeout'
   | 'note'
+  | 'penaltyEnd'
   | 'void'
   | 'edit';
 
@@ -98,14 +109,17 @@ export interface GameEvent {
 
 /* Typed payloads (documentation / helpers) */
 export interface ClockData { running: boolean; remaining: number; period: number }
-export interface GoalData { team: Side; scorer?: string; assists: string[]; strength: Strength; x?: number; y?: number }
+/** `keepPenalty` = a power-play goal that does NOT release the opponent's penalty. */
+export interface GoalData { team: Side; scorer?: string; assists: string[]; strength: Strength; keepPenalty?: boolean; x?: number; y?: number }
 /** `blocker` is the defending player who blocked it; `strength` is the shooting team's strength when taken. */
 export interface ShotData { team: Side; player?: string; result: 'save' | 'miss' | 'block'; blocker?: string; strength?: Strength; x?: number; y?: number }
 /** `team` is the winning side; `player`/`loser` are the winner's and loser's player ids (either may be unknown). `dot` is a FACEOFF_DOTS id. */
 export interface FaceoffData { team: Side; player?: string; loser?: string; dot?: string; x?: number; y?: number }
-export type PenaltyCategory = 'minor' | 'double' | 'major' | 'misconduct' | 'game';
+export type PenaltyCategory = 'minor' | 'double' | 'major' | 'misconduct' | 'game' | 'custom';
 /** `noPP` = the team is not left short-handed (misconducts); absent means it does. */
-export interface PenaltyData { team: Side; player?: string; code: string; label: string; minutes: number; servedBy?: string; category?: PenaltyCategory; noPP?: boolean }
+export interface PenaltyData { team: Side; player?: string; code: string; label: string; minutes: number; servedBy?: string; category?: PenaltyCategory; noPP?: boolean; notes?: string }
+/** Takes a penalty off the board early (manual removal). The PIM stay on the record. */
+export interface PenaltyEndData { target: string; team: Side }
 export interface ShiftData { team: Side; player: string; action: 'on' | 'off' }
 export interface TimeoutData { team: Side }
 export interface NoteData { text: string; audioId?: string }

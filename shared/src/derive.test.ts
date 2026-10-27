@@ -17,6 +17,17 @@ let n = 0;
 const ev = (type: any, period: number, clock: number, data: any, wall = ++n): GameEvent => ({ id: `e${++n}`, gameId: 'g', deviceId: 'd', type, period, clock, wall, data });
 
 describe('derive', () => {
+  it('applies shift changes in entry order even if the clock was moved back', () => {
+    const evs = [
+      ev('shift', 1, 600, { team: 'home', player: 'h1', action: 'on' }),
+      // clock reset earlier, then the line is changed
+      ev('shift', 1, 800, { team: 'home', player: 'h1', action: 'off' }),
+      ev('shift', 1, 800, { team: 'home', player: 'h2', action: 'on' }),
+    ];
+    const d = derive(evs, game, 0);
+    expect([...d.onIce.home]).toEqual(['h2']);
+  });
+
   it('scores goals, stats, TOI, +/-', () => {
     const evs = [
       ev('clock', 1, 900, { running: false, remaining: 900, period: 1 }),
@@ -136,5 +147,32 @@ describe('voice', () => {
     expect(pen(true).ppOpps.away).toBe(0);
     expect(strengthNow(pen(false), 'away')).toBe('PP');
     expect(strengthNow(pen(true), 'away')).toBe('EV');
+  });
+
+  describe('penalty release and removal', () => {
+    // clock stopped at 700s left in P1 => 500s elapsed
+    const base = () => [ev('clock', 1, 700, { running: false, remaining: 700, period: 1 })];
+    const pen = () => ev('penalty', 1, 800, { team: 'home', code: 'TRIP', label: 'Tripping', minutes: 2 });
+    const ppGoal = (extra: any = {}) => ev('goal', 1, 750, { team: 'away', assists: [], strength: 'PP', ...extra });
+
+    it('a power-play goal releases the minor by default', () => {
+      const d = derive([...base(), pen(), ppGoal()], game, 0);
+      expect(d.penalties[0].endedByGoal).toBe(true);
+    });
+    it('keepPenalty leaves the penalty running', () => {
+      const d = derive([...base(), pen(), ppGoal({ keepPenalty: true })], game, 0);
+      expect(d.penalties[0].endedByGoal).toBeUndefined();
+      expect(d.penalties[0].end).toBe(d.penalties[0].start + 120);
+    });
+    it('penaltyEnd takes it off the board but keeps PIM; voiding restores it', () => {
+      const p = pen();
+      const end = ev('penaltyEnd', 1, 700, { target: p.id, team: 'home' });
+      const d = derive([...base(), p, end], game, 0);
+      expect(d.penalties[0].removed).toBe(true);
+      expect(d.byPeriod.pim.home[0]).toBe(2);
+      expect(strengthNow(d, 'away')).toBe('EV');
+      const back = derive([...base(), p, end, ev('void', 1, 700, { target: end.id })], game, 0);
+      expect(strengthNow(back, 'away')).toBe('PP');
+    });
   });
 });

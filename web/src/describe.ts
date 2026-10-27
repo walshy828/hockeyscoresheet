@@ -2,6 +2,7 @@ import type { Game, GameEvent, Player, Side } from '../../shared/src/types.ts';
 import { fmtClock } from '../../shared/src/derive.ts';
 import { periodName } from '../../shared/src/rules.ts';
 import { dotById } from '../../shared/src/rink.ts';
+import { shortLabel } from './playerDisplay.ts';
 
 export const sideName = (g: Game, s: Side) => g[s].name || (s === 'home' ? 'Home' : 'Away');
 
@@ -16,7 +17,7 @@ export function findPlayer(g: Game, id?: string): { p: Player; side: Side } | un
 export function pLabel(g: Game, id?: string, short = false): string {
   const f = findPlayer(g, id);
   if (!f) return id ? '#?' : '';
-  return short ? `#${f.p.number}` : `#${f.p.number}${f.p.name ? ' ' + f.p.name : ''}`;
+  return short ? shortLabel(f.p) : `#${f.p.number}${f.p.name ? ' ' + f.p.name : ''}`;
 }
 
 /** Home/away players in a faceoff, derived from winner team + winner/loser ids. */
@@ -44,7 +45,9 @@ export function describe(g: Game, e: GameEvent): { title: string; team?: Side; s
     case 'faceoff':
       return { team: d.team, title: `Faceoff won ${sideName(g, d.team)}${d.player ? ' ' + pLabel(g, d.player) : ''}`, sub: [d.loser ? `vs ${pLabel(g, d.loser, true)}` : '', dotById(d.dot)?.label ?? ''].filter(Boolean).join(' · ') || undefined };
     case 'penalty':
-      return { team: d.team, title: `PENALTY ${sideName(g, d.team)}${d.player ? ' ' + pLabel(g, d.player) : ''}`, sub: `${d.label} · ${d.minutes} min${d.noPP ? ' · no power play' : ''}` };
+      return { team: d.team, title: `PENALTY ${sideName(g, d.team)}${d.player ? ' ' + pLabel(g, d.player) : ''}`, sub: [`${d.label} · ${d.minutes} min${d.noPP ? ' · no power play' : ''}`, d.servedBy ? `served by ${pLabel(g, d.servedBy, true)}` : '', d.notes].filter(Boolean).join(' · ') };
+    case 'penaltyEnd':
+      return { team: d.team, title: `Penalty removed ${sideName(g, d.team)}` };
     case 'shift':
       return { team: d.team, title: `${d.action === 'on' ? 'On ice' : 'Off ice'} ${pLabel(g, d.player)}` };
     case 'goalie':

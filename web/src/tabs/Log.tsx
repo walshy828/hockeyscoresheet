@@ -5,8 +5,16 @@ import { periodName } from '../../../shared/src/rules.ts';
 import { useGame } from '../ctx.ts';
 import { describe, faceoffSides } from '../describe.ts';
 import { dotById } from '../../../shared/src/rink.ts';
+import { FaceoffFlow } from '../components/FaceoffFlow.tsx';
 import { Rink } from '../components/Rink.tsx';
 import { Sheet, sortPlayers } from '../components/ui.tsx';
+
+/** Pin shown on shot/goal feed rows: solid when a rink location is recorded, faded when it's missing. */
+export function LocPin({ e }: { e: GameEvent }) {
+  if (e.type !== 'shot' && e.type !== 'goal') return null;
+  const has = typeof e.data.x === 'number' && typeof e.data.y === 'number';
+  return <span title={has ? 'Location set' : 'No location set — tap to add'} aria-label={has ? 'Location set' : 'No location set'} style={{ flexShrink: 0, opacity: has ? 1 : 0.35, filter: has ? undefined : 'grayscale(1)' }}>{has ? '📍' : '📍\u20E0'}</span>;
+}
 
 export function LogTab() {
   const { game, d, canEdit } = useGame();
@@ -25,6 +33,7 @@ export function LogTab() {
               <div className="when" style={{ width: 64, textAlign: 'right', flexShrink: 0 }}><b>{fmtClock(e.clock)}</b><div className="muted small">{periodName(e.period, game.rules)}</div></div>
               {x.team ? <span className={`dot ${x.team}`} /> : <span className="dot" style={{ background: 'var(--line)' }} />}
               <div className="grow"><div>{x.title}</div>{x.sub && <div className="muted small">{x.sub}</div>}</div>
+              <LocPin e={e} />
               {canEdit && <span className="muted">›</span>}
             </button>
           );
@@ -36,6 +45,10 @@ export function LogTab() {
 }
 
 export function EditSheet({ e, onClose }: { e: GameEvent; onClose: () => void }) {
+  return e.type === 'faceoff' ? <FaceoffFlow edit={e} onClose={onClose} /> : <EventEditSheet e={e} onClose={onClose} />;
+}
+
+function EventEditSheet({ e, onClose }: { e: GameEvent; onClose: () => void }) {
   const { game, actions } = useGame();
   const [period, setPeriod] = useState(e.period);
   const [m, setM] = useState(String(Math.floor(e.clock / 60)));
@@ -93,9 +106,14 @@ export function EditSheet({ e, onClose }: { e: GameEvent; onClose: () => void })
         {e.type === 'shot' && (
           <label className="field"><span>Result</span><select value={data.result} onChange={(x) => set('result', x.target.value)}><option value="save">On goal</option><option value="miss">Missed</option><option value="block">Blocked</option></select></label>
         )}
-        {e.type === 'penalty' && (
-          <label className="field"><span>Minutes</span><select value={data.minutes} onChange={(x) => set('minutes', Number(x.target.value))}>{[2, 4, 5, 10].map((v) => <option key={v}>{v}</option>)}</select></label>
+        {(e.type === 'shot' || e.type === 'goal') && (
+          <div className="field"><span>Location: {typeof data.x === 'number' && typeof data.y === 'number' ? 'set (tap to move)' : 'not set — tap the rink'}</span>
+            <Rink vertical={false} maxVh={30} pending={typeof data.x === 'number' && typeof data.y === 'number' ? { x: data.x, y: data.y, team } : null} onTap={(x, y) => setPatch({ ...patch, x, y })} /></div>
         )}
+        {e.type === 'penalty' && (
+          <label className="field"><span>Minutes</span><select value={data.minutes} onChange={(x) => set('minutes', Number(x.target.value))}>{[...new Set([2, 4, 5, 10, Number(data.minutes)])].sort((a, b) => a - b).map((v) => <option key={v}>{v}</option>)}</select></label>
+        )}
+        {e.type === 'penalty' && <label className="field"><span>Notes</span><textarea value={data.notes ?? ''} onChange={(x) => set('notes', x.target.value)} /></label>}
         {e.type === 'note' && <label className="field"><span>Text</span><textarea value={data.text} onChange={(x) => set('text', x.target.value)} /></label>}
         <div className="row">
           <button className="btn danger grow" onClick={async () => { await actions.voidEvent(e.id); onClose(); }}>Delete</button>

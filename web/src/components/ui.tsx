@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { Player } from '../../../shared/src/types.ts';
+import { teamNameStyle, useIsDark } from '../theme.ts';
 
 /* ---------- time ---------- */
 export function useNow(ms = 250) {
@@ -89,12 +90,18 @@ export function useLongPress(onTap: () => void, onLong: () => void, ms = 450) {
   };
 }
 
+import { lastName, usePlayerDisplay } from '../playerDisplay.ts';
+
 export function PlayerChip({ p, on, ice, extra, onTap, onLong, badge, sub }: { p: Player; on?: boolean; ice?: boolean; extra?: boolean; onTap: () => void; onLong?: () => void; badge?: string; sub?: string }) {
   const h = useLongPress(onTap, onLong ?? (() => {}));
+  const mode = usePlayerDisplay();
+  const last = lastName(p);
+  const main = mode === 'name' && last ? last : p.number;
+  const small = sub ?? (mode === 'both' ? last || p.pos : undefined);
   return (
-    <button className={`chip ${on ? 'on' : ''} ${ice ? 'ice' : ''} ${extra ? 'extra' : ''} ${p.pos === 'G' ? 'G' : ''}`} {...h} aria-pressed={on} aria-label={`${p.number} ${p.name}`}>
-      <span>{p.number}{badge ? <sup style={{ fontSize: 10, marginLeft: 2 }}>{badge}</sup> : null}</span>
-      <small>{sub ?? (p.name.split(' ').slice(-1)[0] || p.pos)}</small>
+    <button className={`chip ${mode === 'name' ? 'wide' : ''} ${on ? 'on' : ''} ${ice ? 'ice' : ''} ${extra ? 'extra' : ''} ${p.pos === 'G' ? 'G' : ''}`} {...h} aria-pressed={on} aria-label={`${p.number} ${p.name}`}>
+      <span>{main}{badge ? <sup style={{ fontSize: 10, marginLeft: 2 }}>{badge}</sup> : null}</span>
+      {small !== undefined && <small>{small}</small>}
     </button>
   );
 }
@@ -120,4 +127,26 @@ export function Abbr({ code, info }: { code: string; info: string }) {
       onPointerUp={clear} onPointerCancel={clear} onPointerLeave={clear} onPointerMove={clear}
       onContextMenu={(e) => e.preventDefault()}>{code}</abbr>
   );
+}
+
+/* ---------- undo (tap twice to confirm) ---------- */
+export function UndoButton({ onUndo, className = 'btn' }: { onUndo: () => void; className?: string }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <button className={`${className}${armed ? ' danger' : ''}`} onClick={() => { if (armed) { setArmed(false); onUndo(); } else setArmed(true); }}>
+      {armed ? 'Sure? Confirm' : '↶ Undo'}
+    </button>
+  );
+}
+
+/** A team's name in its colour; gets a contrasting pill when the colour would vanish into the theme. */
+export function TeamName({ color, children }: { color: string; children: ReactNode }) {
+  const dark = useIsDark();
+  const t = teamNameStyle(color, dark);
+  return <b className={t.pill ? 'tname pill' : 'tname'} style={{ color: t.color, background: t.background }}>{children}</b>;
 }

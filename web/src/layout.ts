@@ -6,7 +6,8 @@ const EVT = 'hs:scoreLayout-change';
 /** a wide, short screen: iPad / phone held sideways (not a desktop monitor) */
 const LANDSCAPE = '(orientation: landscape) and (min-width: 640px) and (max-height: 900px)';
 
-const read = (): ScoreLayout => { try { return (localStorage.getItem(KEY) as ScoreLayout) || 'auto'; } catch { return 'auto'; } };
+/** landscape is the default; classic is a temporary opt-out that will be removed */
+const read = (): ScoreLayout => { try { return localStorage.getItem(KEY) === 'classic' ? 'classic' : 'landscape'; } catch { return 'landscape'; } };
 export const setScoreLayout = (v: ScoreLayout) => {
   try { localStorage.setItem(KEY, v); } catch { /* private mode */ }
   window.dispatchEvent(new Event(EVT));
@@ -18,8 +19,8 @@ const sub = (f: () => void) => {
 };
 const snap = () => `${read()}|${matchMedia(LANDSCAPE).matches}`;
 
-/** Whether the scoring tab should use the landscape layout (auto = only on a landscape tablet/phone). */
+/** Whether the scoring tab should use the landscape layout (everything except an explicit 'classic' opt-out). */
 export function useScoreLayout() {
-  const [pref, wide] = useSyncExternalStore(sub, snap).split('|');
-  return { pref: pref as ScoreLayout, landscape: pref === 'landscape' || (pref === 'auto' && wide === 'true') };
+  const [pref] = useSyncExternalStore(sub, snap).split('|');
+  return { pref: pref as ScoreLayout, landscape: pref !== 'classic' };
 }

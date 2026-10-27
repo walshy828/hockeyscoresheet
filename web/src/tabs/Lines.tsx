@@ -181,7 +181,7 @@ export function LinesTab() {
 }
 
 /** Set the saved forward / defense / PP / PK combinations for a side. Changes save immediately. */
-function LinesEditor({ side, onClose }: { side: Side; onClose: () => void }) {
+export function LinesEditor({ side, onClose }: { side: Side; onClose: () => void }) {
   const { game, saveGame } = useGame();
   const [slot, setSlot] = useState<{ kind: LineKind; li: number; si: number } | null>(null);
   const roster = game[side].players;
